@@ -220,6 +220,25 @@ body {
   color: #ffffff;
 }
 
+.room-leave-btn {
+  background: rgba(250, 65, 65, 0.2);
+  border: 1px solid rgba(250, 65, 65, 0.4);
+  color: #ff6b6b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.15s;
+}
+
+.room-leave-btn:hover {
+  background: #fa4141;
+  color: #ffffff;
+  border-color: #fa4141;
+}
+
 .header-controls {
   display: flex;
   align-items: center;
@@ -742,6 +761,19 @@ body {
 .btn-danger-soft:hover:not(:disabled) {
   background: rgba(250, 65, 65, 0.25);
   border-color: #ff6b6b;
+  color: #ffffff;
+}
+
+.btn-leave-soft {
+  background: rgba(250, 65, 65, 0.12);
+  border: 1px solid rgba(250, 65, 65, 0.3);
+  color: #ff7676;
+  width: 100%;
+}
+
+.btn-leave-soft:hover:not(:disabled) {
+  background: rgba(250, 65, 65, 0.25);
+  border-color: #ff7676;
   color: #ffffff;
 }
 

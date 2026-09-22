@@ -33,6 +33,8 @@ export class ChessNetwork {
       onResign: () => {},
       onDrawOffer: () => {},
       onDrawResponse: () => {},
+      onRematchRequest: () => {},
+      onRematchResponse: () => {},
       onError: () => {}
     };
 
@@ -229,6 +231,14 @@ export class ChessNetwork {
         this.callbacks.onDrawResponse(data.accepted);
         break;
 
+      case 'REMATCH_REQUEST':
+        this.callbacks.onRematchRequest();
+        break;
+
+      case 'REMATCH_RESPONSE':
+        this.callbacks.onRematchResponse(data.accepted, data.newHostColor);
+        break;
+
       case 'LEAVE':
         this.isOpponentPresent = false;
         this.callbacks.onOpponentLeft();
@@ -302,6 +312,20 @@ export class ChessNetwork {
     this._send({
       type: 'DRAW_RESPONSE',
       accepted
+    });
+  }
+
+  sendRematchRequest() {
+    this._send({
+      type: 'REMATCH_REQUEST'
+    });
+  }
+
+  sendRematchResponse(accepted, newHostColor) {
+    this._send({
+      type: 'REMATCH_RESPONSE',
+      accepted,
+      newHostColor
     });
   }
 

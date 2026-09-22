@@ -27,6 +27,7 @@ const appModeBadge = document.getElementById('appModeBadge');
 const roomPill = document.getElementById('roomPill');
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
 const copyRoomLinkBtn = document.getElementById('copyRoomLinkBtn');
+const headerLeaveRoomBtn = document.getElementById('headerLeaveRoomBtn');
 const soundToggleBtn = document.getElementById('soundToggleBtn');
 const soundIcon = document.getElementById('soundIcon');
 const openOnlineModalBtn = document.getElementById('openOnlineModalBtn');
@@ -58,7 +59,9 @@ const redoBtn = document.getElementById('redoBtn');
 const newGameBtn = document.getElementById('newGameBtn');
 const resignBtn = document.getElementById('resignBtn');
 const drawBtn = document.getElementById('drawBtn');
+const leaveRoomBtn = document.getElementById('leaveRoomBtn');
 const onlineActionsRow = document.getElementById('onlineActionsRow');
+const onlineLeaveRow = document.getElementById('onlineLeaveRow');
 const localOptionsGrid = document.getElementById('localOptionsGrid');
 
 const gameModeSelect = document.getElementById('gameModeSelect');
@@ -102,13 +105,18 @@ const drawOfferModal = document.getElementById('drawOfferModal');
 const acceptDrawBtn = document.getElementById('acceptDrawBtn');
 const declineDrawBtn = document.getElementById('declineDrawBtn');
 
+const rematchModal = document.getElementById('rematchModal');
+const acceptRematchBtn = document.getElementById('acceptRematchBtn');
+const declineRematchBtn = document.getElementById('declineRematchBtn');
+
 const promotionModal = document.getElementById('promotionModal');
 const promotionChoices = document.getElementById('promotionChoices');
 
 const gameOverModal = document.getElementById('gameOverModal');
 const gameOverTitle = document.getElementById('gameOverTitle');
 const gameOverSubtitle = document.getElementById('gameOverSubtitle');
-const modalNewGameBtn = document.getElementById('modalNewGameBtn');
+const modalRematchBtn = document.getElementById('modalRematchBtn');
+const modalGameOverLeaveBtn = document.getElementById('modalGameOverLeaveBtn');
 
 // Initialize Board UI
 boardUI = new BoardUI(document.getElementById('chessboard'), game, {
@@ -146,9 +154,34 @@ newGameBtn.addEventListener('click', () => {
     startNewGame();
   }
 });
-modalNewGameBtn.addEventListener('click', () => {
-  closeGameOverModal();
-  startNewGame();
+
+modalRematchBtn.addEventListener('click', () => {
+  if (currentMode === 'online') {
+    network.sendRematchRequest();
+    modalRematchBtn.textContent = 'Rematch Requested...';
+    modalRematchBtn.disabled = true;
+    addChatMessage('System', 'Rematch requested. Waiting for opponent...', 'system');
+  } else {
+    closeGameOverModal();
+    startNewGame();
+  }
+});
+
+// Leave Room Listeners
+headerLeaveRoomBtn.addEventListener('click', () => {
+  if (confirm('Are you sure you want to leave the room?')) {
+    leaveOnlineRoom();
+  }
+});
+
+leaveRoomBtn.addEventListener('click', () => {
+  if (confirm('Are you sure you want to leave the room?')) {
+    leaveOnlineRoom();
+  }
+});
+
+modalGameOverLeaveBtn.addEventListener('click', () => {
+  leaveOnlineRoom();
 });
 
 resignBtn.addEventListener('click', () => {
@@ -245,6 +278,9 @@ createRoomActionBtn.addEventListener('click', () => {
   const [initSec, inc] = parseTimeSelectValue(onlineTimeSelect.value);
   const selectedColor = document.querySelector('input[name="colorChoice"]:checked').value;
 
+  // Crucial: Set Host's timer right away to match selected time control
+  timer.reset(initSec, inc);
+
   const code = network.createRoom({ initial: initSec, increment: inc }, selectedColor);
   createdRoomCode.textContent = code;
   createdRoomBox.style.display = 'flex';
@@ -313,6 +349,23 @@ declineDrawBtn.addEventListener('click', () => {
   drawOfferModal.classList.remove('open');
   network.sendDrawResponse(false);
   addChatMessage('System', 'You declined the draw offer.', 'system');
+});
+
+// Rematch Modal Handlers
+acceptRematchBtn.addEventListener('click', () => {
+  rematchModal.classList.remove('open');
+  // Invert colors for rematch
+  const newHostColor = myOnlineColor === 'w' ? 'b' : 'w';
+  myOnlineColor = newHostColor;
+  network.sendRematchResponse(true, newHostColor);
+  startOnlineRematchGame();
+  addChatMessage('System', 'Rematch accepted! Colors swapped. Good luck!', 'system');
+});
+
+declineRematchBtn.addEventListener('click', () => {
+  rematchModal.classList.remove('open');
+  network.sendRematchResponse(false);
+  addChatMessage('System', 'You declined the rematch request.', 'system');
 });
 
 // Check URL query parameter for automatic room joining
@@ -506,10 +559,19 @@ function handleUndoOrTakeback() {
   if (!game.canUndo()) return;
 
   if (currentMode === 'online') {
+    const lastMove = game.getLastMove();
+    if (!lastMove) return;
+
+    // Strict check: player can ONLY request takeback for their own move!
+    if (lastMove.color !== myOnlineColor) {
+      addChatMessage('System', 'You can only take back your own move, not your opponent\'s.', 'system');
+      return;
+    }
+
     network.sendUndoRequest();
-    addChatMessage('System', 'Takeback requested. Waiting for friend...', 'system');
+    addChatMessage('System', 'Takeback requested. Waiting for opponent to accept...', 'system');
     undoBtn.disabled = true;
-    setTimeout(() => { undoBtn.disabled = !game.canUndo(); }, 4000);
+    setTimeout(() => { updateActionButtons(); }, 4000);
     return;
   }
 
@@ -586,6 +648,49 @@ function handleDrawAgreed() {
   showGameOverModal(status);
 }
 
+function leaveOnlineRoom() {
+  network.disconnect();
+  currentMode = 'bot-medium';
+  myOnlineColor = null;
+  appModeBadge.textContent = 'LOCAL';
+  appModeBadge.className = 'brand-badge';
+  roomPill.style.display = 'none';
+  onlineActionsRow.style.display = 'none';
+  onlineLeaveRow.style.display = 'none';
+  modalGameOverLeaveBtn.style.display = 'none';
+  localOptionsGrid.style.display = 'grid';
+  undoBtnText.textContent = 'Undo';
+  boardUI.setAllowedColor(null);
+  boardUI.setOrientation('white');
+
+  // Clear query params from URL
+  const url = new URL(window.location.href);
+  url.searchParams.delete('room');
+  window.history.replaceState({}, '', url.pathname);
+
+  addChatMessage('System', 'You left the room. Returned to local play.', 'system');
+  closeGameOverModal();
+  rematchModal.classList.remove('open');
+  startNewGame();
+}
+
+function startOnlineRematchGame() {
+  game.reset();
+  boardUI.clearSelection();
+  boardUI.setOrientation(myOnlineColor === 'w' ? 'white' : 'black');
+  boardUI.setAllowedColor(myOnlineColor);
+
+  closeGameOverModal();
+  rematchModal.classList.remove('open');
+
+  if (network.timeControl) {
+    timer.reset(network.timeControl.initial, network.timeControl.increment);
+  }
+
+  updatePlayerBarLabels();
+  updateAllUI();
+}
+
 // --------------------------------------------------------------------------
 // Timer Event Handlers
 // --------------------------------------------------------------------------
@@ -640,6 +745,12 @@ function setupNetworkCallbacks() {
 
   network.setCallback('onOpponentJoined', (data) => {
     onlineModal.classList.remove('open');
+
+    // Make sure host timer is synchronized with chosen time control
+    if (network.timeControl) {
+      timer.reset(network.timeControl.initial, network.timeControl.increment);
+    }
+
     enterOnlineMode();
     addChatMessage('System', `${data.name || 'Friend'} joined the game!`, 'system');
   });
@@ -662,9 +773,9 @@ function setupNetworkCallbacks() {
       playMoveSound(move);
       timer.switchTurn(game.getTurn());
 
-      // Sync opponent's clock if provided
+      // Sync opponent's clock precisely
       if (data.timeRemaining !== undefined) {
-        if (network.playerColor === 'w') {
+        if (myOnlineColor === 'w') {
           timer.blackTime = data.timeRemaining;
         } else {
           timer.whiteTime = data.timeRemaining;
@@ -689,7 +800,7 @@ function setupNetworkCallbacks() {
       executeTakeback();
       addChatMessage('System', 'Takeback was accepted.', 'system');
     } else {
-      addChatMessage('System', 'Takeback request declined by opponent.', 'system');
+      addChatMessage('System', 'Takeback request was declined by opponent.', 'system');
     }
   });
 
@@ -709,8 +820,31 @@ function setupNetworkCallbacks() {
     }
   });
 
+  network.setCallback('onRematchRequest', () => {
+    rematchModal.classList.add('open');
+    soundFx.playCheck();
+    addChatMessage('System', 'Opponent has requested a rematch!', 'system');
+  });
+
+  network.setCallback('onRematchResponse', (accepted, newHostColor) => {
+    if (accepted) {
+      if (newHostColor) {
+        myOnlineColor = newHostColor === 'w' ? 'b' : 'w';
+      } else {
+        myOnlineColor = myOnlineColor === 'w' ? 'b' : 'w';
+      }
+      startOnlineRematchGame();
+      addChatMessage('System', 'Rematch accepted! Colors swapped. Good luck!', 'system');
+    } else {
+      modalRematchBtn.textContent = 'Request Rematch';
+      modalRematchBtn.disabled = false;
+      addChatMessage('System', 'Rematch offer declined by opponent.', 'system');
+    }
+  });
+
   network.setCallback('onOpponentLeft', () => {
-    addChatMessage('System', 'Opponent disconnected from the room.', 'system');
+    addChatMessage('System', 'Your opponent has left the room.', 'system');
+    statusText.textContent = 'Opponent left room';
   });
 
   network.setCallback('onError', (msg) => {
@@ -724,6 +858,8 @@ function enterOnlineMode() {
   appModeBadge.className = 'brand-badge online';
   roomPill.style.display = 'flex';
   onlineActionsRow.style.display = 'grid';
+  onlineLeaveRow.style.display = 'grid';
+  modalGameOverLeaveBtn.style.display = 'block';
   localOptionsGrid.style.display = 'none';
   undoBtnText.textContent = 'Takeback';
 
@@ -769,6 +905,17 @@ function showGameOverModal(status) {
   } else {
     gameOverSubtitle.textContent = `The game concluded with a ${status.title.toLowerCase()}.`;
   }
+
+  if (currentMode === 'online') {
+    modalRematchBtn.textContent = 'Request Rematch';
+    modalRematchBtn.disabled = false;
+    modalGameOverLeaveBtn.style.display = 'block';
+  } else {
+    modalRematchBtn.textContent = 'Play Again';
+    modalRematchBtn.disabled = false;
+    modalGameOverLeaveBtn.style.display = 'none';
+  }
+
   gameOverModal.classList.add('open');
 }
 
@@ -802,7 +949,13 @@ function updateGameStatusBadge() {
 }
 
 function updateActionButtons() {
-  undoBtn.disabled = !game.canUndo();
+  if (currentMode === 'online') {
+    const lastMove = game.getLastMove();
+    // In online mode: Takeback is ONLY enabled if the last move made was yours!
+    undoBtn.disabled = !game.canUndo() || !lastMove || lastMove.color !== myOnlineColor;
+  } else {
+    undoBtn.disabled = !game.canUndo();
+  }
   redoBtn.disabled = !game.canRedo();
 }
 
