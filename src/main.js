@@ -66,6 +66,7 @@ const localOptionsGrid = document.getElementById('localOptionsGrid');
 
 const gameModeSelect = document.getElementById('gameModeSelect');
 const timeControlSelect = document.getElementById('timeControlSelect');
+const timeControlNote = document.getElementById('timeControlNote');
 const boardThemeSelect = document.getElementById('boardThemeSelect');
 const autoFlipSwitch = document.getElementById('autoFlipSwitch');
 
@@ -198,6 +199,7 @@ drawBtn.addEventListener('click', () => {
 
 gameModeSelect.addEventListener('change', (e) => {
   currentMode = e.target.value;
+  applyModeTimeControl();
   updatePlayerBarLabels();
   if (isBotTurn() && !game.isGameOver()) {
     triggerBotMove();
@@ -205,9 +207,11 @@ gameModeSelect.addEventListener('change', (e) => {
 });
 
 timeControlSelect.addEventListener('change', (e) => {
-  const [initSec, inc] = parseTimeSelectValue(e.target.value);
-  timer.reset(initSec, inc);
-  updateAllUI();
+  if (currentMode === 'pass') {
+    const [initSec, inc] = parseTimeSelectValue(e.target.value);
+    timer.reset(initSec, inc);
+    updateAllUI();
+  }
 });
 
 boardThemeSelect.addEventListener('change', (e) => {
@@ -382,13 +386,31 @@ if (autoRoomCode) {
 }
 
 // Initial Setup
-const [defaultInit, defaultInc] = parseTimeSelectValue(timeControlSelect.value);
-timer.reset(defaultInit, defaultInc);
+applyModeTimeControl();
 updateAllUI();
 
 // --------------------------------------------------------------------------
 // Core Logic & Handlers
 // --------------------------------------------------------------------------
+
+function applyModeTimeControl() {
+  if (currentMode === 'online') {
+    return;
+  }
+
+  if (currentMode.startsWith('bot-')) {
+    // When playing with bots, no time constraint
+    timeControlSelect.disabled = true;
+    if (timeControlNote) timeControlNote.textContent = '(Untimed vs Bot)';
+    timer.reset(0, 0);
+  } else if (currentMode === 'pass') {
+    // For pass and play, keep the timer
+    timeControlSelect.disabled = false;
+    if (timeControlNote) timeControlNote.textContent = '';
+    const [initSec, inc] = parseTimeSelectValue(timeControlSelect.value);
+    timer.reset(initSec, inc);
+  }
+}
 
 function parseTimeSelectValue(val) {
   const [init, inc] = val.split(',').map(Number);
@@ -617,8 +639,12 @@ function startNewGame() {
   boardUI.clearSelection();
   closeGameOverModal();
 
-  const [initSec, inc] = parseTimeSelectValue(timeControlSelect.value);
-  timer.reset(initSec, inc);
+  if (currentMode.startsWith('bot-')) {
+    timer.reset(0, 0);
+  } else {
+    const [initSec, inc] = parseTimeSelectValue(timeControlSelect.value);
+    timer.reset(initSec, inc);
+  }
 
   updateAllUI();
 }
@@ -651,6 +677,7 @@ function handleDrawAgreed() {
 function leaveOnlineRoom() {
   network.disconnect();
   currentMode = 'bot-medium';
+  gameModeSelect.value = 'bot-medium';
   myOnlineColor = null;
   appModeBadge.textContent = 'LOCAL';
   appModeBadge.className = 'brand-badge';
@@ -671,6 +698,7 @@ function leaveOnlineRoom() {
   addChatMessage('System', 'You left the room. Returned to local play.', 'system');
   closeGameOverModal();
   rematchModal.classList.remove('open');
+  applyModeTimeControl();
   startNewGame();
 }
 
